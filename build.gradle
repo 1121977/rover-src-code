@@ -1,0 +1,59 @@
+plugins {
+    id 'java'
+    id 'war'
+    id "io.spring.dependency-management" version "1.0.6.RELEASE"
+}
+
+group = 'ru.ctf'
+//version = '1.0-SNAPSHOT'
+
+//SkillTrack repository
+repositories {
+    maven {
+        allowInsecureProtocol = true
+        url = "http://nexus:8081/repository/maven-public/"
+    }
+}
+
+//Global repository
+/*
+repositories {
+    mavenCentral()
+}
+*/
+
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.12.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'org.assertj:assertj-core:3.27.7'
+    testImplementation 'org.mockito:mockito-core:5.17.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.17.0'
+    testImplementation 'org.springframework:spring-test:6.2.5'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params'
+
+    implementation 'org.springframework:spring-context-support:7.0.6'
+    implementation 'com.h2database:h2:2.3.232'
+    implementation 'org.springframework:spring-webmvc:7.0.6'
+    implementation 'org.springframework:spring-web:7.0.6'
+    implementation 'org.hibernate.orm:hibernate-core:7.3.0.Final'
+    implementation 'org.springframework.data:spring-data-jpa:3.4.4'
+    implementation 'org.thymeleaf:thymeleaf-spring6:3.1.3.RELEASE'
+    implementation 'org.springframework.security:spring-security-web:7.0.4'
+    implementation 'org.springframework.security:spring-security-config:7.0.4'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.21.2'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.19.0'
+    implementation 'ch.qos.logback:logback-classic:1.5.32'
+    implementation 'com.google.guava:guava:33.4.8-jre'
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    testImplementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+war {
+    setProperty("archivesBaseName", "rover")
+}

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Photos</title>
+</head>
+<body>
+    <!--h1 th:text="${path}">Nothing</h1-->
+    <h1>Mars's landscapes</h1>
+
+    <table>
+        <tr>
+            <th>NAME</th>
+        </tr>
+        <tr th:each="file : ${fileSet}">
+            <td><a href="photo.html" th:href="@{/photo/get?file={fileId}(fileId=${file})}" th:text="${file}">view</a></td>
+        </tr>
+    </table>
+</body>
+</html>
