@@ -49,6 +49,9 @@ public class PhotoController implements ServletContextAware {
     @GetMapping(value = "/photo/get")
     public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
         logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
+        if(fileName.contains("..")){
+            throw new IllegalArgumentException();
+        }
 
         String fullPath = pathDirPhoto + '/' + fileName;
         File downloadFile = new File(fullPath);
