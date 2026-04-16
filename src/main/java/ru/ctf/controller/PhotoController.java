@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.ServletContextAware;
 
 import java.io.*;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.InvalidAlgorithmParameterException;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -50,12 +53,25 @@ public class PhotoController implements ServletContextAware {
     public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
         logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
+        Path safePath;
+        try {
+            safePath = resolveSafePhotoPath(fileName);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Rejected photo file request: {}", e.getMessage());
+            httpServletResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+
+        File downloadFile = safePath.toFile();
+        if (!downloadFile.isFile()) {
+            httpServletResponse.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+
+        try (InputStream is = new FileInputStream(downloadFile);
              OutputStream outStream = httpServletResponse.getOutputStream();
         ) {
-            String mimeType = servletContext.getMimeType(fullPath);
+            String mimeType = servletContext.getMimeType(downloadFile.getAbsolutePath());
             if (mimeType == null) {
                 mimeType = "application/octet-stream";
             }
@@ -75,7 +91,23 @@ public class PhotoController implements ServletContextAware {
             }
         } catch (Exception e) {
             logger.error(e.getMessage());
-            e.printStackTrace();
+        }
+    }
+
+    private Path resolveSafePhotoPath(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            throw new IllegalArgumentException("Empty file name");
+        }
+
+        try {
+            Path baseDir = Paths.get(pathDirPhoto).toAbsolutePath().normalize();
+            Path resolvedFile = baseDir.resolve(fileName).normalize();
+            if (!resolvedFile.startsWith(baseDir)) {
+                throw new IllegalArgumentException("Path traversal attempt");
+            }
+            return resolvedFile;
+        } catch (InvalidPathException e) {
+            throw new IllegalArgumentException("Invalid file path");
         }
     }
 
