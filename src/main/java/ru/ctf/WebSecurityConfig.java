@@ -16,12 +16,17 @@ import org.springframework.security.web.SecurityFilterChain;
 @ComponentScan
 public class WebSecurityConfig {
 
+    @Value("${security.basic.username}")
+    private String username;
+
+    @Value("${security.basic.password-hash}")
+    private String passwordHash;
+
     @Bean
     public UserDetailsService userDetailsService() {
         InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
-        manager.createUser(User.withUsername("user")
-                // Don't change password!!! It is only for ForcAD usage and it is unique for a service.
-                .password("{bcrypt}$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG")
+        manager.createUser(User.withUsername(username)
+                .password(passwordHash)
                 .roles("USER")
                 .build());
         return manager;
