@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.ServletContextAware;
 
 import java.io.*;
-import java.security.InvalidAlgorithmParameterException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,37 +49,68 @@ public class PhotoController implements ServletContextAware {
     }
 
     @GetMapping(value = "/photo/get")
-    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
-        logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
+    public void getPhoto(@RequestParam(name = "file") String fileName,
+                        HttpServletResponse httpServletResponse,
+                        ServletRequest servletRequest) {
+        logger.info("URI: {} host: {} file:{}",
+                ((HttpServletRequest) servletRequest).getRequestURI(),
+                servletRequest.getRemoteHost(),
+                fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
-             OutputStream outStream = httpServletResponse.getOutputStream();
-        ) {
-            String mimeType = servletContext.getMimeType(fullPath);
-            if (mimeType == null) {
-                mimeType = "application/octet-stream";
+        if (fileName == null || fileName.isBlank()) {
+            try {
+                httpServletResponse.sendError(HttpServletResponse.SC_BAD_REQUEST);
+            } catch (IOException ignored) {
             }
-            httpServletResponse.setContentType(mimeType);
-            httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
-            String headerKey = "Content-Disposition";
-            String headerValue = String.format("attachment; filename=\"%s\"",
-                    downloadFile.getName());
-            httpServletResponse.setHeader(headerKey, headerValue);
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead = -1;
+            return;
+        }
 
-            // write each byte of data  read from the input stream into the output stream
-            while ((bytesRead = is.read(buffer)) != -1) {
-                outStream.write(buffer, 0, bytesRead);
+        try {
+            Path basePath = Paths.get(pathDirPhoto).toAbsolutePath().normalize();
+            Path targetPath = basePath.resolve(fileName).normalize();
+
+            if (!targetPath.startsWith(basePath)) {
+                httpServletResponse.sendError(HttpServletResponse.SC_FORBIDDEN);
+                return;
             }
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
+
+            if (!Files.isRegularFile(targetPath)) {
+                httpServletResponse.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
+
+            File downloadFile = targetPath.toFile();
+            try (InputStream is = Files.newInputStream(targetPath);
+                OutputStream outStream = httpServletResponse.getOutputStream()) {
+                String mimeType = servletContext.getMimeType(downloadFile.getAbsolutePath());
+                if (mimeType == null) {
+                    mimeType = "application/octet-stream";
+                }
+
+                httpServletResponse.setContentType(mimeType);
+                httpServletResponse.setContentLengthLong(downloadFile.length());
+                httpServletResponse.setHeader(
+                        "Content-Disposition",
+                        String.format("attachment; filename=\"%s\"", downloadFile.getName())
+                );
+
+                byte[] buffer = new byte[BUFFER_SIZE];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    outStream.write(buffer, 0, bytesRead);
+                }
+            }
+        } catch (IOException e) {
+            logger.error("Failed to send photo file", e);
+            try {
+                if (!httpServletResponse.isCommitted()) {
+                    httpServletResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                }
+            } catch (IOException ignored) {
+            }
         }
     }
+
 
     @Override
     public void setServletContext(ServletContext servletContext) {
