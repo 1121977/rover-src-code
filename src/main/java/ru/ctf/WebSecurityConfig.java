@@ -28,25 +28,11 @@ public class WebSecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain apiGetFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/api/get/*")
                 .authorizeHttpRequests(authorize -> authorize
-                        .anyRequest()
-                        .authenticated()
-                )
-                .csrf(AbstractHttpConfigurer::disable)
-                .httpBasic(Customizer.withDefaults());
-        return http.build();
-    }
-
-    @Bean
-    public SecurityFilterChain apiPutFilterChain(HttpSecurity http) throws Exception {
-        http
-                .securityMatcher("/api/put")
-                .authorizeHttpRequests(authorize -> authorize
-                        .anyRequest()
-                        .authenticated()
+                        .requestMatchers("/static/**").permitAll()
+                        .anyRequest().authenticated()
                 )
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(Customizer.withDefaults());

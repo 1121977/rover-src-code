@@ -5,6 +5,7 @@ import java.util.List;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityTransaction;
+import jakarta.persistence.NoResultException;
 import jakarta.persistence.TypedQuery;
 import ru.ctf.model.Command;
 
@@ -43,6 +44,8 @@ public class CommandDaoImpl extends DaoImpl<Command> implements CommandDao {
             TypedQuery<Command> commandTypedQuery = em.createQuery("select co from Command co where co.id=:id", Command.class);
             commandTypedQuery.setParameter("id", id);
             return commandTypedQuery.getSingleResult();
+        } catch (NoResultException e) {
+            return null;
         }
     }
 
@@ -52,6 +55,8 @@ public class CommandDaoImpl extends DaoImpl<Command> implements CommandDao {
             TypedQuery<Command> commandTypedQuery = em.createQuery("select co from Command co where co.instructionId=:instructionId", Command.class);
             commandTypedQuery.setParameter("instructionId", instructionId);
             return commandTypedQuery.getSingleResult();
+        } catch (NoResultException e) {
+            return null;
         }
     }
 }
