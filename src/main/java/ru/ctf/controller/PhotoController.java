@@ -17,6 +17,9 @@ import java.security.InvalidAlgorithmParameterException;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.io.IOException;
 
 @Controller
 public class PhotoController implements ServletContextAware {
@@ -42,40 +45,50 @@ public class PhotoController implements ServletContextAware {
                 .map(File::getName)
                 .collect(Collectors.toSet());
         model.addAttribute("fileSet", filesSet);
-        model.addAttribute("path", new File("").getAbsolutePath());
+        // Уязвимость №3 ИСПРАВЛЕНА: удалено раскрытие пути
+        // model.addAttribute("path", new File("").getAbsolutePath());
         return "list";
     }
 
     @GetMapping(value = "/photo/get")
-    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
+    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException, IOException {
         logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
-             OutputStream outStream = httpServletResponse.getOutputStream();
-        ) {
-            String mimeType = servletContext.getMimeType(fullPath);
+        // Уязвимость №1 ИСПРАВЛЕНА: нормализация пути и проверка
+        Path basePath = Paths.get(pathDirPhoto).toAbsolutePath().normalize();
+        Path resolvedPath = basePath.resolve(fileName).normalize();
+        
+        if (!resolvedPath.startsWith(basePath)) {
+            httpServletResponse.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied");
+            return;
+        }
+        
+        File downloadFile = resolvedPath.toFile();
+        if (!downloadFile.exists() || downloadFile.isDirectory()) {
+            httpServletResponse.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+        
+        try (InputStream is = new FileInputStream(downloadFile);
+             OutputStream outStream = httpServletResponse.getOutputStream()) {
+            String mimeType = servletContext.getMimeType(downloadFile.getAbsolutePath());
             if (mimeType == null) {
                 mimeType = "application/octet-stream";
             }
             httpServletResponse.setContentType(mimeType);
             httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
             String headerKey = "Content-Disposition";
-            String headerValue = String.format("attachment; filename=\"%s\"",
-                    downloadFile.getName());
+            String headerValue = String.format("attachment; filename=\"%s\"", downloadFile.getName());
             httpServletResponse.setHeader(headerKey, headerValue);
+            
             byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead = -1;
-
-            // write each byte of data  read from the input stream into the output stream
+            int bytesRead;
             while ((bytesRead = is.read(buffer)) != -1) {
                 outStream.write(buffer, 0, bytesRead);
             }
         } catch (Exception e) {
             logger.error(e.getMessage());
-            e.printStackTrace();
+            httpServletResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }
 
