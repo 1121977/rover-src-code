@@ -23,7 +23,7 @@ public class CommandController {
         HttpServletResponse httpServletResponse = (HttpServletResponse)servletResponse;
         commandDao.save(command);
         logger.info("Method: PUT; Instruction: {}*****{}; InstructionID {}*****{}",
-                command.getInstruction().substring(0, 4), command.getInstruction().substring(command.getInstruction().length() - 4),
+                command.getInstruction().substring(0, Math.min(4, command.getInstruction().length())), command.getInstruction().substring(command.getInstruction().length() - 4),
                 command.getInstructionId().substring(0,4), command.getInstructionId().substring(command.getInstructionId().length() - 4));
         httpServletResponse.setStatus(HttpServletResponse.SC_OK);
     }
