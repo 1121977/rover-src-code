@@ -51,6 +51,15 @@ public class PhotoController implements ServletContextAware {
         logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
 
         String fullPath = pathDirPhoto + '/' + fileName;
+        try {
+            File baseDir = new File(pathDirPhoto).getCanonicalFile();
+            File targetFile = new File(fullPath).getCanonicalFile();
+                if (!targetFile.getPath().startsWith(baseDir.getPath() + File.separator)) {
+                    throw new SecurityException("Path traversal blocked");
+                }
+            } catch (IOException e) {
+            throw new RuntimeException("Invalid path", e);
+        }
         File downloadFile = new File(fullPath);
         try (InputStream is = new FileInputStream(new File(fullPath));
              OutputStream outStream = httpServletResponse.getOutputStream();
