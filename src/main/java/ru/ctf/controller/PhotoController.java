@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.ServletContextAware;
 
 import java.io.*;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.InvalidAlgorithmParameterException;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -50,32 +52,46 @@ public class PhotoController implements ServletContextAware {
     public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
         logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
-             OutputStream outStream = httpServletResponse.getOutputStream();
-        ) {
-            String mimeType = servletContext.getMimeType(fullPath);
-            if (mimeType == null) {
-                mimeType = "application/octet-stream";
-            }
-            httpServletResponse.setContentType(mimeType);
-            httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
-            String headerKey = "Content-Disposition";
-            String headerValue = String.format("attachment; filename=\"%s\"",
-                    downloadFile.getName());
-            httpServletResponse.setHeader(headerKey, headerValue);
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead = -1;
+        try {
+            Path basePath = Paths.get(pathDirPhoto).toAbsolutePath().normalize();
+            Path targetPath = basePath.resolve(fileName).normalize();
 
-            // write each byte of data  read from the input stream into the output stream
-            while ((bytesRead = is.read(buffer)) != -1) {
-                outStream.write(buffer, 0, bytesRead);
+            if (!targetPath.startsWith(basePath)) {
+                httpServletResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return;
+            }
+
+            File downloadFile = targetPath.toFile();
+
+            if (!downloadFile.exists() || !downloadFile.isFile()) {
+                httpServletResponse.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
+
+            try (InputStream is = new FileInputStream(downloadFile);
+                 OutputStream outStream = httpServletResponse.getOutputStream();
+            ) {
+                String mimeType = servletContext.getMimeType(downloadFile.getAbsolutePath());
+                if (mimeType == null) {
+                    mimeType = "application/octet-stream";
+                }
+                httpServletResponse.setContentType(mimeType);
+                httpServletResponse.setContentLength((int)downloadFile.length());
+                
+                String headerKey = "Content-Disposition";
+                String headerValue = String.format("attachment; filename=\"%s\"", downloadFile.getName());
+                httpServletResponse.setHeader(headerKey, headerValue);
+                
+                byte[] buffer = new byte[BUFFER_SIZE];
+                int bytesRead = -1;
+
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    outStream.write(buffer, 0, bytesRead);
+                }
             }
         } catch (Exception e) {
             logger.error(e.getMessage());
-            e.printStackTrace();
+            httpServletResponse.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }
 
