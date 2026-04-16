@@ -13,7 +13,10 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.ServletContextAware;
 
 import java.io.*;
-import java.security.InvalidAlgorithmParameterException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,36 +50,69 @@ public class PhotoController implements ServletContextAware {
     }
 
     @GetMapping(value = "/photo/get")
-    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
+    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) {
         logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
+        final Path safePath;
+        try {
+            safePath = resolveSafePhotoPath(fileName);
+        } catch (InvalidPathException e) {
+            logger.warn("Invalid path requested: {}", fileName);
+            try {
+                httpServletResponse.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid file path");
+            } catch (IOException ioException) {
+                logger.error("Failed to send error response", ioException);
+            }
+            return;
+        }
+
+        if (!Files.isRegularFile(safePath)) {
+            try {
+                httpServletResponse.sendError(HttpServletResponse.SC_NOT_FOUND, "File not found");
+            } catch (IOException e) {
+                logger.error("Failed to send error response", e);
+            }
+            return;
+        }
+
+        File downloadFile = safePath.toFile();
+        try (InputStream is = new FileInputStream(downloadFile);
              OutputStream outStream = httpServletResponse.getOutputStream();
         ) {
-            String mimeType = servletContext.getMimeType(fullPath);
+            String mimeType = servletContext.getMimeType(downloadFile.getAbsolutePath());
             if (mimeType == null) {
                 mimeType = "application/octet-stream";
             }
             httpServletResponse.setContentType(mimeType);
             httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
             String headerKey = "Content-Disposition";
             String headerValue = String.format("attachment; filename=\"%s\"",
                     downloadFile.getName());
             httpServletResponse.setHeader(headerKey, headerValue);
             byte[] buffer = new byte[BUFFER_SIZE];
             int bytesRead = -1;
-
-            // write each byte of data  read from the input stream into the output stream
             while ((bytesRead = is.read(buffer)) != -1) {
                 outStream.write(buffer, 0, bytesRead);
             }
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
+        } catch (IOException e) {
+            logger.error("Unable to serve file: {}", safePath, e);
+            try {
+                if (!httpServletResponse.isCommitted()) {
+                    httpServletResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Unable to serve file");
+                }
+            } catch (IOException ioException) {
+                logger.error("Failed to send error response", ioException);
+            }
         }
+    }
+
+    private Path resolveSafePhotoPath(String fileName) {
+        Path basePath = Paths.get(pathDirPhoto).toAbsolutePath().normalize();
+        Path candidatePath = basePath.resolve(fileName).normalize();
+        if (!candidatePath.startsWith(basePath)) {
+            throw new InvalidPathException(fileName, "Path traversal detected");
+        }
+        return candidatePath;
     }
 
     @Override

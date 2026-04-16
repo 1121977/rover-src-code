@@ -28,7 +28,7 @@ public class WebSecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain apiGetFilterChain(HttpSecurity http) throws Exception {
+     public SecurityFilterChain apiGetFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/get/*")
                 .authorizeHttpRequests(authorize -> authorize
