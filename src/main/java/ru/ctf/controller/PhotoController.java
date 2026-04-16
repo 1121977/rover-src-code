@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.ServletContextAware;
 
 import java.io.*;
-import java.security.InvalidAlgorithmParameterException;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -23,9 +22,11 @@ public class PhotoController implements ServletContextAware {
 
     private ServletContext servletContext;
     private static final int BUFFER_SIZE = 4096;
+
     @Autowired
     @Qualifier("pathDirPhoto")
     private String pathDirPhoto;
+
     @Autowired
     private Logger logger;
 
@@ -37,45 +38,65 @@ public class PhotoController implements ServletContextAware {
     @GetMapping(value = {"/photo/", "/photo"})
     public String getPhoto2(Model model, ServletRequest servletRequest) {
         logger.info("URI: {} host: {}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost());
-        Set<String> filesSet = Stream.of(new File(pathDirPhoto).listFiles())
-                .filter(file -> !file.isDirectory())
-                .map(File::getName)
-                .collect(Collectors.toSet());
-        model.addAttribute("fileSet", filesSet);
+        File photoDir = new File(pathDirPhoto);
+        if (photoDir.exists() && photoDir.isDirectory()) {
+            Set<String> filesSet = Stream.of(photoDir.listFiles())
+                    .filter(file -> !file.isDirectory())
+                    .map(File::getName)
+                    .collect(Collectors.toSet());
+            model.addAttribute("fileSet", filesSet);
+        }
         model.addAttribute("path", new File("").getAbsolutePath());
         return "list";
     }
 
-    @GetMapping(value = "/photo/get")
-    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
-        logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
+    @GetMapping("/photo/get")
+    public void getPhoto(@RequestParam(name = "file") String fileName, 
+                         HttpServletResponse httpServletResponse, 
+                         ServletRequest servletRequest) {
+        logger.info("URI: {} host: {} file:{}", 
+            ((HttpServletRequest)servletRequest).getRequestURI(), 
+            servletRequest.getRemoteHost(), 
+            fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
-             OutputStream outStream = httpServletResponse.getOutputStream();
-        ) {
-            String mimeType = servletContext.getMimeType(fullPath);
-            if (mimeType == null) {
-                mimeType = "application/octet-stream";
-            }
-            httpServletResponse.setContentType(mimeType);
-            httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
-            String headerKey = "Content-Disposition";
-            String headerValue = String.format("attachment; filename=\"%s\"",
-                    downloadFile.getName());
-            httpServletResponse.setHeader(headerKey, headerValue);
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead = -1;
+        File baseDir = new File(pathDirPhoto);
+        File requestedFile = new File(baseDir, fileName);
+        
+        try {
+            String canonicalBasePath = baseDir.getCanonicalPath();
+            String canonicalRequestedPath = requestedFile.getCanonicalPath();
+            
 
-            // write each byte of data  read from the input stream into the output stream
-            while ((bytesRead = is.read(buffer)) != -1) {
-                outStream.write(buffer, 0, bytesRead);
+            if (!canonicalRequestedPath.startsWith(canonicalBasePath + File.separator) &&
+                !canonicalRequestedPath.equals(canonicalBasePath)) {
+                logger.warn("Path traversal attempt blocked: {}", fileName);
+                httpServletResponse.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied");
+                return;
             }
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
+            
+            if (!requestedFile.exists() || requestedFile.isDirectory()) {
+                httpServletResponse.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
+            
+            try (InputStream is = new FileInputStream(requestedFile);
+                 OutputStream outStream = httpServletResponse.getOutputStream()) {
+                
+                String mimeType = servletContext.getMimeType(requestedFile.getName());
+                if (mimeType == null) { mimeType = "application/octet-stream"; }
+                
+                httpServletResponse.setContentType(mimeType);
+                httpServletResponse.setContentLength((int) requestedFile.length());
+                httpServletResponse.setHeader("Content-Disposition", "attachment; filename=\"" + requestedFile.getName() + "\"");
+                
+                byte[] buffer = new byte[BUFFER_SIZE];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    outStream.write(buffer, 0, bytesRead);
+                }
+            }
+        } catch (IOException e) {
+            try { httpServletResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR); } catch (IOException ignored) {}
         }
     }
 
