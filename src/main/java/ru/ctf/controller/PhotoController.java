@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.ServletContextAware;
 
 import java.io.*;
-import java.security.InvalidAlgorithmParameterException;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,35 +46,65 @@ public class PhotoController implements ServletContextAware {
     }
 
     @GetMapping(value = "/photo/get")
-    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
-        logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
+    public void getPhoto(@RequestParam(name = "file") String fileName, 
+                         HttpServletResponse httpServletResponse, 
+                         ServletRequest servletRequest) {
+        logger.info("URI: {} host: {} file:{}", 
+            ((HttpServletRequest)servletRequest).getRequestURI(), 
+            servletRequest.getRemoteHost(), 
+            fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
-             OutputStream outStream = httpServletResponse.getOutputStream();
-        ) {
-            String mimeType = servletContext.getMimeType(fullPath);
-            if (mimeType == null) {
-                mimeType = "application/octet-stream";
+        // Безопасная обработка пути
+        File baseDir = new File(pathDirPhoto);
+        File requestedFile = new File(baseDir, fileName);
+        
+        try {
+            String canonicalBasePath = baseDir.getCanonicalPath();
+            String canonicalRequestedPath = requestedFile.getCanonicalPath();
+            
+            // Проверка, что запрошенный файл находится внутри базовой директории
+            if (!canonicalRequestedPath.startsWith(canonicalBasePath + File.separator) &&
+                !canonicalRequestedPath.equals(canonicalBasePath)) {
+                logger.warn("Path traversal attempt blocked: {}", fileName);
+                httpServletResponse.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied");
+                return;
             }
-            httpServletResponse.setContentType(mimeType);
-            httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
-            String headerKey = "Content-Disposition";
-            String headerValue = String.format("attachment; filename=\"%s\"",
-                    downloadFile.getName());
-            httpServletResponse.setHeader(headerKey, headerValue);
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead = -1;
-
-            // write each byte of data  read from the input stream into the output stream
-            while ((bytesRead = is.read(buffer)) != -1) {
-                outStream.write(buffer, 0, bytesRead);
+            
+            File downloadFile = requestedFile;
+            if (!downloadFile.exists() || downloadFile.isDirectory()) {
+                httpServletResponse.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
             }
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
+            
+            try (InputStream is = new FileInputStream(downloadFile);
+                 OutputStream outStream = httpServletResponse.getOutputStream()) {
+                
+                String mimeType = servletContext.getMimeType(downloadFile.getName());
+                if (mimeType == null) {
+                    mimeType = "application/octet-stream";
+                }
+                httpServletResponse.setContentType(mimeType);
+                httpServletResponse.setContentLength((int) downloadFile.length());
+                
+                String headerValue = String.format("attachment; filename=\"%s\"", downloadFile.getName());
+                httpServletResponse.setHeader("Content-Disposition", headerValue);
+                
+                byte[] buffer = new byte[BUFFER_SIZE];
+                int bytesRead;
+                while ((bytesRead = is.read(buffer)) != -1) {
+                    outStream.write(buffer, 0, bytesRead);
+                }
+            } catch (Exception e) {
+                logger.error("Error serving file: {}", e.getMessage());
+                httpServletResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            }
+        } catch (IOException e) {
+            logger.error("Path resolution error: {}", e.getMessage());
+            try {
+                httpServletResponse.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            } catch (IOException ex) {
+                logger.error("Failed to send error response", ex);
+            }
         }
     }
 
