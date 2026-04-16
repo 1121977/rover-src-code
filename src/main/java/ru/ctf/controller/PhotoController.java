@@ -47,37 +47,51 @@ public class PhotoController implements ServletContextAware {
     }
 
     @GetMapping(value = "/photo/get")
-    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
-        logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
+public void getPhoto(@RequestParam(name = "file") String fileName,
+                     HttpServletResponse httpServletResponse,
+                     ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
-             OutputStream outStream = httpServletResponse.getOutputStream();
-        ) {
-            String mimeType = servletContext.getMimeType(fullPath);
+    logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(),
+            servletRequest.getRemoteHost(), fileName);
+
+    try {
+        File baseDirFile = new File(pathDirPhoto);
+        String baseDir = baseDirFile.getCanonicalPath();
+
+        File file = new File(baseDirFile, fileName);
+        String canonicalPath = file.getCanonicalPath();
+
+        
+        if (!canonicalPath.startsWith(baseDir + File.separator)) {
+            throw new SecurityException("Invalid file path");
+        }
+
+        try (InputStream is = new FileInputStream(file);
+             OutputStream outStream = httpServletResponse.getOutputStream()) {
+
+            String mimeType = servletContext.getMimeType(file.getAbsolutePath());
             if (mimeType == null) {
                 mimeType = "application/octet-stream";
             }
-            httpServletResponse.setContentType(mimeType);
-            httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
-            String headerKey = "Content-Disposition";
-            String headerValue = String.format("attachment; filename=\"%s\"",
-                    downloadFile.getName());
-            httpServletResponse.setHeader(headerKey, headerValue);
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead = -1;
 
-            // write each byte of data  read from the input stream into the output stream
+            httpServletResponse.setContentType(mimeType);
+            httpServletResponse.setContentLength((int) file.length());
+
+            String headerValue = String.format("attachment; filename=\"%s\"", file.getName());
+            httpServletResponse.setHeader("Content-Disposition", headerValue);
+
+            byte[] buffer = new byte[BUFFER_SIZE];
+            int bytesRead;
+
             while ((bytesRead = is.read(buffer)) != -1) {
                 outStream.write(buffer, 0, bytesRead);
             }
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
         }
+
+    } catch (Exception e) {
+        logger.error(e.getMessage(), e);
     }
+}
 
     @Override
     public void setServletContext(ServletContext servletContext) {
