@@ -12,6 +12,7 @@ import ru.ctf.dao.CommandDao;
 import ru.ctf.dao.CommandDaoImpl;
 
 import javax.sql.DataSource;
+import java.util.Properties;
 
 @Configuration
 @PropertySource({"classpath:application.properties"})
@@ -47,11 +48,14 @@ public class JpaConfig {
     @Bean
     public LocalContainerEntityManagerFactoryBean localContainerEntityManagerFactoryBean() {
         HibernateJpaVendorAdapter vendorAdapter = new HibernateJpaVendorAdapter();
-        vendorAdapter.setGenerateDdl(true);
+        vendorAdapter.setGenerateDdl(false);
         LocalContainerEntityManagerFactoryBean factory = new LocalContainerEntityManagerFactoryBean();
         factory.setJpaVendorAdapter(vendorAdapter);
         factory.setPackagesToScan("ru.ctf");
         factory.setDataSource(dataSource);
+        Properties jpaProperties = new Properties();
+        jpaProperties.put("jakarta.persistence.schema-generation.database.action", "none");
+        factory.setJpaProperties(jpaProperties);
         return factory;
     }
 

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.ServletContextAware;
 
 import java.io.*;
-import java.security.InvalidAlgorithmParameterException;
+import java.nio.file.Path;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,35 +47,105 @@ public class PhotoController implements ServletContextAware {
     }
 
     @GetMapping(value = "/photo/get")
-    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) throws InvalidAlgorithmParameterException {
+    public void getPhoto(@RequestParam(name = "file") String fileName, HttpServletResponse httpServletResponse, ServletRequest servletRequest) {
         logger.info("URI: {} host: {} file:{}", ((HttpServletRequest)servletRequest).getRequestURI(), servletRequest.getRemoteHost(), fileName);
 
-        String fullPath = pathDirPhoto + '/' + fileName;
-        File downloadFile = new File(fullPath);
-        try (InputStream is = new FileInputStream(new File(fullPath));
-             OutputStream outStream = httpServletResponse.getOutputStream();
-        ) {
-            String mimeType = servletContext.getMimeType(fullPath);
-            if (mimeType == null) {
-                mimeType = "application/octet-stream";
-            }
-            httpServletResponse.setContentType(mimeType);
-            httpServletResponse.setContentLength((int)downloadFile.length());
-            // set headers for the response object
-            String headerKey = "Content-Disposition";
-            String headerValue = String.format("attachment; filename=\"%s\"",
-                    downloadFile.getName());
-            httpServletResponse.setHeader(headerKey, headerValue);
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead = -1;
+        if (isMissingFileName(fileName)) {
+            httpServletResponse.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
 
-            // write each byte of data  read from the input stream into the output stream
-            while ((bytesRead = is.read(buffer)) != -1) {
-                outStream.write(buffer, 0, bytesRead);
+        try {
+            PhotoResolve resolved = resolvePhotoFile(fileName);
+            switch (resolved.kind()) {
+                case FORBIDDEN -> {
+                    httpServletResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                }
+                case NOT_FOUND -> {
+                    httpServletResponse.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                }
+                case OK -> writePhotoFileToResponse(resolved.file(), httpServletResponse);
             }
+        } catch (IOException e) {
+            logger.error(e.getMessage());
+            httpServletResponse.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         } catch (Exception e) {
             logger.error(e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    private static boolean isMissingFileName(String fileName) {
+        return fileName == null || fileName.isBlank();
+    }
+
+    private PhotoResolve resolvePhotoFile(String fileName) throws IOException {
+        File baseDir = new File(pathDirPhoto).getCanonicalFile();
+        File downloadFile = new File(baseDir, fileName).getCanonicalFile();
+        Path basePath = baseDir.toPath();
+        Path filePath = downloadFile.toPath();
+        if (!filePath.startsWith(basePath)) {
+            logger.warn("Path outside photo directory: {}", fileName);
+            return PhotoResolve.forbidden();
+        }
+        if (!downloadFile.isFile()) {
+            return PhotoResolve.notFound();
+        }
+        return PhotoResolve.ok(downloadFile);
+    }
+
+    private void writePhotoFileToResponse(File downloadFile, HttpServletResponse response) throws IOException {
+        try (InputStream is = new FileInputStream(downloadFile);
+             OutputStream outStream = response.getOutputStream()) {
+            String mimeType = servletContext.getMimeType(downloadFile.getPath());
+            if (mimeType == null) {
+                mimeType = "application/octet-stream";
+            }
+            response.setContentType(mimeType);
+            response.setContentLength((int) downloadFile.length());
+            response.setHeader("Content-Disposition", String.format("attachment; filename=\"%s\"",
+                    downloadFile.getName()));
+            byte[] buffer = new byte[BUFFER_SIZE];
+            int bytesRead;
+            while ((bytesRead = is.read(buffer)) != -1) {
+                outStream.write(buffer, 0, bytesRead);
+            }
+        }
+    }
+
+    private static final class PhotoResolve {
+        enum Kind {
+            OK,
+            FORBIDDEN,
+            NOT_FOUND
+        }
+
+        private final Kind kind;
+        private final File file;
+
+        private PhotoResolve(Kind kind, File file) {
+            this.kind = kind;
+            this.file = file;
+        }
+
+        static PhotoResolve ok(File file) {
+            return new PhotoResolve(Kind.OK, file);
+        }
+
+        static PhotoResolve forbidden() {
+            return new PhotoResolve(Kind.FORBIDDEN, null);
+        }
+
+        static PhotoResolve notFound() {
+            return new PhotoResolve(Kind.NOT_FOUND, null);
+        }
+
+        Kind kind() {
+            return kind;
+        }
+
+        File file() {
+            return file;
         }
     }
 

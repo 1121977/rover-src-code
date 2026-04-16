@@ -1,8 +1,10 @@
 package ru.ctf;
 
+import jakarta.servlet.Filter;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.support.AbstractAnnotationConfigDispatcherServletInitializer;
+import ru.ctf.filter.AuthFilter;
 
 public class WebApplication extends AbstractAnnotationConfigDispatcherServletInitializer {
     @Override
@@ -18,6 +20,11 @@ public class WebApplication extends AbstractAnnotationConfigDispatcherServletIni
     @Override
     protected String[] getServletMappings() {
         return new String[]{"/"};
+    }
+
+    @Override
+    protected Filter[] getServletFilters() {
+        return new Filter[]{new AuthFilter()};
     }
 
     @Override
